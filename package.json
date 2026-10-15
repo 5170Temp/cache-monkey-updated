@@ -6,14 +6,16 @@
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/5170Temp" },
   "main": "src/main/index.js",
+  "desktopName": "cache-monkey.desktop",
   "engines": { "node": ">=24 <25" },
+  "homepage": "https://github.com/jamiepine/cache-monkey/",
   "scripts": {
     "dev": "concurrently -k \"webpack serve --config webpack.renderer.config.cjs --mode development\" \"wait-on http://localhost:9080 && cross-env NODE_ENV=development electron .\"",
     "pack": "webpack --config webpack.renderer.config.cjs --mode production",
     "build": "npm run pack && electron-builder build -p never",
     "build:win": "npm run pack && electron-builder build -w --x64 -p never",
     "build:osx": "npm run pack && electron-builder build -m -p never",
-    "build:lin": "npm run pack && electron-builder build -l --x64 -p never",
+    "build:lin": "node scripts/build-linux.cjs",
     "build:dir": "npm run pack && electron-builder --dir",
     "lint": "eslint src test webpack.renderer.config.cjs",
     "lint:fix": "eslint --fix src test webpack.renderer.config.cjs"
@@ -27,7 +29,7 @@
     "publish": [{ "provider": "github", "owner": "jamiepine", "repo": "cache-monkey" }],
     "mac": { "icon": "build/icons/icon.icns" },
     "win": { "icon": "build/icons/icon.ico" },
-    "linux": { "target": ["AppImage", "deb", "snap"], "maintainer": "AlekEagle", "category": "Utility", "icon": "build/icons" }
+    "linux": { "target": ["AppImage", "deb", "snap"], "maintainer": "AlekEagle", "category": "Utility", "icon": "build/icons", "syncDesktopName": true }
   },
   "dependencies": {
     "@electron/remote": "^2.1.3",
