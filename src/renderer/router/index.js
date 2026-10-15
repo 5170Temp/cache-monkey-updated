@@ -1,28 +1,14 @@
-import Vue from 'vue';
-import Router from 'vue-router';
+import { createRouter, createWebHashHistory } from 'vue-router';
+import LandingPage from '@/components/LandingPage.vue';
+import Settings from '@/components/Settings.vue';
+import Info from '@/components/Info.vue';
 
-Vue.use(Router);
-
-export default new Router({
+export default createRouter({
+  history: createWebHashHistory(),
   routes: [
-    {
-      path: '/home',
-      name: 'home',
-      component: require('@/components/LandingPage').default,
-    },
-    {
-      path: '/settings',
-      name: 'settings',
-      component: require('@/components/Settings').default,
-    },
-    {
-      path: '/info',
-      name: 'info',
-      component: require('@/components/Info').default,
-    },
-    {
-      path: '*',
-      redirect: '/home',
-    },
-  ],
+    { path: '/home', name: 'home', component: LandingPage },
+    { path: '/settings', name: 'settings', component: Settings },
+    { path: '/info', name: 'info', component: Info },
+    { path: '/:pathMatch(.*)*', redirect: '/home' }
+  ]
 });

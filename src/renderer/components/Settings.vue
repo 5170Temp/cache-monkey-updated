@@ -90,18 +90,16 @@
 
 <script>
 import { promisify } from "util";
-const { dialog } = require("electron").remote;
+const { dialog } = require("@electron/remote");
 const { shell } = require("electron"); // deconstructing assignment
 const Path = require("path");
 const fs = require("fs");
-const readChunk = require("read-chunk");
-const fileType = require("file-type");
 const os = require("os");
 const readdir = promisify(fs.readdir);
 const copyFile = promisify(fs.copyFile);
 const rename = promisify(fs.rename);
 const stat = promisify(fs.stat);
-const chokidar = require("chokidar");
+const { cacheDataDirectory } = require("../../logic/cache/chromium");
 import Input from "./Input";
 import { mapState } from "vuex";
 
@@ -121,6 +119,7 @@ export default {
       this.watchDirectories = Object.keys(obj).map(item => obj[item]);
       return this.watchDirectories;
     },
+
     rmDir(directory) {
       // this.watchDirectories.splice(index, 1);
 
@@ -128,25 +127,28 @@ export default {
         dir => directory.dir !== dir.dir
       );
     },
+
     chooseDumpDir() {
-      let dir = dialog.showOpenDialog({
+      let dir = dialog.showOpenDialogSync({
         properties: ["openDirectory"]
       });
-      if (dir.length > 0) {
+      if (dir && dir.length > 0) {
         this.dumpDirectory = dir[0].split("\\").join("/");
         localStorage.setItem("dumpDir", this.dumpDirectory);
         this.fileIndex = {};
       }
     },
+
     choosePicturesDir() {
-      let dir = dialog.showOpenDialog({
+      let dir = dialog.showOpenDialogSync({
         properties: ["openDirectory"]
       });
-      if (dir.length > 0) {
+      if (dir && dir.length > 0) {
         this.picsDir = dir[0].split("\\").join("/");
         localStorage.setItem("picsDir", this.picsDir);
       }
     },
+
     addDiscord() {
       let userDir = Path.join(os.homedir())
         .split("\\")
@@ -158,6 +160,7 @@ export default {
       if (os.platform() === 'linux') {
         directory = `${userDir}/.config/discord/Cache`
       }
+      directory = Path.join(directory, "Cache_Data");
       let dupe = this.watchDirectories.filter(item => item.dir === directory);
       if (dupe.length > 0) return;
       if (fs.existsSync(directory)) {
@@ -167,13 +170,14 @@ export default {
         });
         this.watchDirectories = this.watchDirectories;
       } else {
-        this.$root.$emit(
+        this.$bus.emit(
           "alert",
           "error",
           "Directory not found! You might not have this application installed."
         );
       }
     },
+
     addDiscordCanary() {
       let userDir = Path.join(os.homedir())
         .split("\\")
@@ -185,6 +189,7 @@ export default {
       if (os.platform() === 'linux') {
         directory = `${userDir}/.config/discordcanary/Cache`
       }
+      directory = Path.join(directory, "Cache_Data");
       let dupe = this.watchDirectories.filter(item => item.dir === directory);
       if (dupe.length > 0) return;
       if (fs.existsSync(directory)) {
@@ -194,13 +199,14 @@ export default {
         });
         this.watchDirectories = this.watchDirectories;
       } else {
-        this.$root.$emit(
+        this.$bus.emit(
           "alert",
           "error",
           "Directory not found! You might not have this application installed."
         );
       }
     },
+
     addDiscordPTB() {
       let userDir = Path.join(os.homedir())
         .split("\\")
@@ -212,6 +218,7 @@ export default {
       if (os.platform() === 'linux') {
         directory = `${userDir}/.config/discordptb/Cache`
       }
+      directory = Path.join(directory, "Cache_Data");
       let dupe = this.watchDirectories.filter(item => item.dir === directory);
       if (dupe.length > 0) return;
       if (fs.existsSync(directory)) {
@@ -221,13 +228,14 @@ export default {
         });
         this.watchDirectories = this.watchDirectories;
       } else {
-        this.$root.$emit(
+        this.$bus.emit(
           "alert",
           "error",
           "Directory not found! You might not have this application installed."
         );
       }
     },
+
     addSlack() {
       let userDir = Path.join(os.homedir())
         .split("\\")
@@ -239,6 +247,7 @@ export default {
       if (os.platform() === 'linux') {
         directory = `${userDir}/.config/Slack/Cache`
       }
+      directory = Path.join(directory, "Cache_Data");
       let dupe = this.watchDirectories.filter(item => item.dir === directory);
       if (dupe.length > 0) return;
       if (fs.existsSync(directory)) {
@@ -248,13 +257,14 @@ export default {
         });
         this.watchDirectories = this.watchDirectories;
       } else {
-        this.$root.$emit(
+        this.$bus.emit(
           "alert",
           "error",
           "Directory not found! You might not have this application installed."
         );
       }
     },
+
     addNotion() {
       let userDir = Path.join(os.homedir())
         .split("\\")
@@ -266,6 +276,7 @@ export default {
       if (os.platform() === 'linux') {
         directory = `${userDir}/.config/Notion/Cache`
       }
+      directory = Path.join(directory, "Cache_Data");
       let dupe = this.watchDirectories.filter(item => item.dir === directory);
       if (dupe.length > 0) return;
       if (fs.existsSync(directory)) {
@@ -275,13 +286,14 @@ export default {
         });
         this.watchDirectories = this.watchDirectories;
       } else {
-        this.$root.$emit(
+        this.$bus.emit(
           "alert",
           "error",
           "Directory not found! You might not have this application installed."
         );
       }
     },
+
     addGoogleChrome() {
       let userDir = Path.join(os.homedir())
         .split("\\")
@@ -293,6 +305,7 @@ export default {
       if (os.platform() === 'linux') {
         directory = `${userDir}/.cache/google-chrome/Default/Cache/`
       }
+      directory = Path.join(directory, "Cache_Data");
       let dupe = this.watchDirectories.filter(item => item.dir === directory);
       console.log(dupe);
       if (dupe.length > 0) return;
@@ -304,20 +317,21 @@ export default {
         });
         this.watchDirectories = this.watchDirectories;
       } else {
-        this.$root.$emit(
+        this.$bus.emit(
           "alert",
           "error",
           "Directory not found! You might not have this application installed."
         );
       }
     },
+
     chooseWatchDir() {
-      let dir = dialog.showOpenDialog({
+      let dir = dialog.showOpenDialogSync({
         properties: ["openDirectory"]
       });
       if (!dir) return;
       if (dir.length > 0) {
-        let cleanDir = dir[0].split("\\").join("/");
+        let cleanDir = cacheDataDirectory(dir[0].split("\\").join("/"));
         let dirArray = cleanDir.split("/");
         let name = dirArray[dirArray.length - 2];
         let dupe = this.watchDirectories.filter(item => item.dir === cleanDir);
@@ -329,9 +343,10 @@ export default {
         this.watchDirectories = this.watchDirectories;
       }
     },
-    openDirectory(item) {
-      if (item) shell.openItem(item);
-      else shell.openItem(this.dumpDirectory);
+
+    async openDirectory(item) {
+      const error = await shell.openPath(item || this.dumpDirectory);
+      if (error) this.$bus.emit("alert", "error", `Could not open folder: ${error}`);
     }
   },
   computed: {
@@ -339,6 +354,7 @@ export default {
       get() {
         return this.$store.state.fileIndex;
       },
+
       set(value) {
         this.$store.state.fileIndex = value;
       }
@@ -347,6 +363,7 @@ export default {
       get() {
         return this.$store.state.picsDir;
       },
+
       set(value) {
         this.$store.state.picsDir = value;
       }
@@ -355,6 +372,7 @@ export default {
       get() {
         return this.$store.state.dumpDirectory;
       },
+
       set(value) {
         this.$store.state.dumpDirectory = value;
       }
@@ -363,6 +381,7 @@ export default {
       get() {
         return this.$store.state.watchDirectories;
       },
+
       set(value) {
         console.log("hi?");
         localStorage.setItem("watchDirectories", JSON.stringify(value));
@@ -373,6 +392,7 @@ export default {
       get() {
         return this.$store.state.foundFiletypes;
       },
+
       set(value) {
         this.$store.state.foundFiletypes = value;
       }
@@ -381,6 +401,7 @@ export default {
       get() {
         return this.$store.state.currentTask;
       },
+
       set(value) {
         this.$store.state.currentTask = value;
       }
@@ -389,6 +410,7 @@ export default {
       get() {
         return this.$store.state.totalAnalysing;
       },
+
       set(value) {
         this.$store.state.totalAnalysing = value;
       }
@@ -397,6 +419,7 @@ export default {
       get() {
         return this.$store.state.totalAnalysed;
       },
+
       set(value) {
         this.$store.state.totalAnalysed = value;
       }
@@ -405,6 +428,7 @@ export default {
       get() {
         return this.$store.state.dumpScanComplete;
       },
+
       set(value) {
         this.$store.state.dumpScanComplete = value;
       }
@@ -413,6 +437,7 @@ export default {
       get() {
         return this.$store.state.dirScanComplete;
       },
+
       set(value) {
         this.$store.state.dirScanComplete = value;
       }
@@ -421,6 +446,7 @@ export default {
       get() {
         return this.$store.state.watchBlocker;
       },
+
       set(value) {
         this.$store.state.watchBlocker = value;
       }

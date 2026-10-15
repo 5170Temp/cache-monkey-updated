@@ -14,7 +14,7 @@
           >No Nevermind!</button>
           <button
             class="coolbtn margin-vertical danger"
-            @click="$parent.confirmPurgeBoth"
+            @click="$root.confirmPurgeBoth"
           >Yes I'm Sure!</button>
         </div>
       </div>
@@ -31,6 +31,7 @@ export default {
   components: {
     FileView
   },
+
   data() {
     return {
       modalContent: "",
@@ -39,23 +40,27 @@ export default {
       data: false
     };
   },
+
   created() {
-    this.$root.$on("confirmModal", (modalContent, data) => {
+    this.$bus.on("confirmModal", (modalContent, data) => {
       this.data = data;
       this.open(modalContent);
     });
-    this.$root.$on("closeConfirmModal", () => {
+    this.$bus.on("closeConfirmModal", () => {
       this.close();
     });
   },
+
   methods: {
     open(modalContent) {
       this.modalContent = modalContent;
       this.show = true;
     },
+
     backdropPress() {
       this.close();
     },
+
     close() {
       this.show = false;
       document.body.classList.remove("bigEditNewPost");
@@ -66,6 +71,7 @@ export default {
       get() {
         return this.$store.state.showConfirmModel;
       },
+
       set(value) {
         this.$store.state.showConfirmModel = value;
       }

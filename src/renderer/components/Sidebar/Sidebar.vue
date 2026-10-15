@@ -28,23 +28,28 @@
 </template>
 
 <script>
-const { shell, remote } = require("electron");
+const { shell } = require("electron");
+const remote = require("@electron/remote");
 const win = remote.getCurrentWindow();
 
 export default {
   name: "home",
   components: {},
+
   mounted() {},
+
   data() {
     return {
       version: remote.app.getVersion()
     };
   },
+
   methods: {
     devtools() {
       console.log(this)
-      win.openDevTools();
+      win.webContents.openDevTools();
     },
+
     open(link) {
       shell.openExternal(link);
     }

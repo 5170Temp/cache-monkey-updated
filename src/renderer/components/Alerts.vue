@@ -14,16 +14,19 @@
 <script>
 export default {
   name: "Alerts",
+
   data() {
     return {
       alerts: []
     };
   },
+
   mounted() {
-    this.$root.$on("alert", (type, message, link) => {
+    this.$bus.on("alert", (type, message, link) => {
       this[type](message, link);
     });
   },
+
   methods: {
     createAlert: function(theme, message, link) {
       if (this.alerts.filter(alert => alert.message === message).length <= 0) {
@@ -40,15 +43,19 @@ export default {
         }, (link ? 12000 : 4000));
       }
     },
+
     success: function(message, link) {
       this.createAlert("success fadeout", message, link);
     },
+
     error: function(message, link) {
       this.createAlert("error fadeout", message, link);
     },
+
     info: function(message, link) {
       this.createAlert("info fadeout", message, link);
     },
+
     open(link) {
       this.$electron.shell.openExternal(link);
     }

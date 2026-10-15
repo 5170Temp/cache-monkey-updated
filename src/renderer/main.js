@@ -1,69 +1,40 @@
-import Vue from "vue";
-import axios from "axios";
+import { createApp } from 'vue';
+import App from './App.vue';
+import router from './router';
+import store from './store';
+import eventBus from './event-bus';
+import { shell } from 'electron';
+import { library } from '@fortawesome/fontawesome-svg-core';
+import { faEnvelope, faMagic, faHeart, faCog, faTrash, faFolderOpen } from '@fortawesome/free-solid-svg-icons';
+import { faTwitter, faLinkedinIn, faTwitch } from '@fortawesome/free-brands-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+import VueTippy from 'vue-tippy';
+import 'tippy.js/dist/tippy.css';
 
-import App from "./App";
-import router from "./router";
-import store from "./store";
+library.add(faTwitter, faLinkedinIn, faTwitch, faEnvelope, faMagic, faHeart, faCog, faFolderOpen, faTrash);
 
-// import '../logic/database/database';
-// Font Awesome Libraries
-import { library } from "@fortawesome/fontawesome-svg-core";
-import {
-  faEnvelope,
-  faMagic,
-  faHeart,
-  faCog,
-  faTrash,
-  faFolderOpen
-} from "@fortawesome/free-solid-svg-icons";
-import {
-  faTwitter,
-  faLinkedinIn,
-  faTwitch
-} from "@fortawesome/free-brands-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
-
-library.add({
-  faTwitter,
-  faLinkedinIn,
-  faTwitch,
-  faEnvelope,
-  faMagic,
-  faHeart,
-  faCog,
-  faFolderOpen,
-  faTrash
-});
-
-Vue.component("icon", FontAwesomeIcon);
-
-import vshortkey from "vue-shortkey";
-Vue.use(vshortkey);
-
-// Vue Tippy
-import VueTippy from "vue-tippy";
-Vue.use(VueTippy);
-
-// import dao from '../logic/database/dao'
-
-// const CoreDB = new dao('Core', true);
-// CoreDB.connect().then(() => {
-//   CoreDB.newRow('user', {
-//     name: 'Jamie',
-//     email: 'jamie@notify.me'
-//   }).then()
-// })
-
-if (!process.env.IS_WEB) Vue.use(require("vue-electron"));
-Vue.http = Vue.prototype.$http = axios;
-Vue.config.productionTip = false;
-
-/* eslint-disable no-new */
-new Vue({
-  components: {
-    App
+const app = createApp(App);
+app.component('icon', FontAwesomeIcon);
+app.use(router);
+app.use(store);
+app.use(VueTippy);
+app.config.globalProperties.$electron = { shell };
+app.config.globalProperties.$bus = eventBus;
+app.directive('shortkey', {
+  mounted(element, binding) {
+    const keys = binding.value || [];
+    const handler = event => {
+      const key = event.key.toLowerCase();
+      if (keys.some(shortcut => shortcut === key || (shortcut === 'esc' && key === 'escape'))) {
+        element.dispatchEvent(new Event('shortkey'));
+      }
+    };
+    element.__shortkeyHandler = handler;
+    window.addEventListener('keydown', handler);
   },
-  router,
-  store,
-  template: "<App/>"
-}).$mount("#app");
+
+  unmounted(element) {
+    window.removeEventListener('keydown', element.__shortkeyHandler);
+  }
+});
+app.mount('#app');

@@ -1,17 +1,20 @@
-import Vue from "vue";
-import Vuex from "vuex";
-
-import { createPersistedState, createSharedMutations } from "vuex-electron";
+import { createStore } from "vuex";
 
 import modules from "./modules";
 
-Vue.use(Vuex);
+const persisted = (() => {
+  try {
+    const state = JSON.parse(localStorage.getItem('vuex') || '{}');
+    delete state.updateReady;
+    return state;
+  }
+  catch { return {}; }
+})();
 
-export default new Vuex.Store({
+const store = createStore({
   strict: false,
   modules,
   state: {
-    updateReady: false,
     processing: false,
     fileIndex: {},
     scan: [],
@@ -62,8 +65,15 @@ export default new Vuex.Store({
       duration: 0
     }
   },
-  plugins: [
-    createPersistedState()
-    // createSharedMutations(),
-  ]
+  plugins: [store => {
+    Object.assign(store.state, persisted);
+    localStorage.setItem('vuex', JSON.stringify(store.state));
+    store.watch(
+      state => state,
+      state => localStorage.setItem('vuex', JSON.stringify(state)),
+      { deep: true }
+    );
+  }]
 });
+
+export default store;

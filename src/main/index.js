@@ -1,166 +1,104 @@
-import { app, BrowserWindow, dialog } from "electron"; // eslint-disable-line
-import { autoUpdater } from "electron-updater";
-import Vue from "vue";
-/**
- * Set `__static` path to static files in production
- * https://simulatedgreg.gitbooks.io/electron-vue/content/en/using-static-assets.html
- */
-if (process.env.NODE_ENV !== "development") {
-  global.__static = require("path")
-    .join(__dirname, "/static")
-    .replace(/\\/g, "\\\\"); // eslint-disable-line
+const path = require('node:path');
+const fs = require('node:fs');
+const { app, BrowserWindow } = require('electron');
+
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+if (isDevelopment) {
+  const profile = path.join(app.getPath('appData'), `${app.getName()}-development`);
+  fs.mkdirSync(profile, { recursive: true });
+  app.setPath('userData', profile);
+  app.setPath('sessionData', profile);
 }
 
-let mainWindow;
-const winURL =
-  process.env.NODE_ENV === "development"
-    ? "http://localhost:9080"
-    : `file://${__dirname}/index.html`;
+if (app.requestSingleInstanceLock()) {
+  startApp();
+} else {
+  app.quit();
+}
 
-function createWindow() {
-  /**
-   * Initial window options
-   */
-  mainWindow = new BrowserWindow({
-    height: 619,
-    useContentSize: true,
-    width: 1093,
-    frame: false,
-    title: "CacheMonkey",
-    webPreferences: {
-      devTools: true,
-      webSecurity: false
+function startApp() {
+  const remote = require('@electron/remote/main');
+  const { autoUpdater } = require('electron-updater');
+
+  remote.initialize();
+
+  let mainWindow;
+  app.updateDownloaded = false;
+  app.updateDownloading = false;
+  app.updateFailed = false;
+  autoUpdater.allowDowngrade = false;
+
+  function createWindow() {
+    mainWindow = new BrowserWindow({
+      height: 619,
+      useContentSize: true,
+      width: 1093,
+      frame: false,
+      title: 'CacheMonkey',
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+        webSecurity: !isDevelopment
+      }
+    });
+    remote.enable(mainWindow.webContents);
+    if (isDevelopment) {
+      mainWindow.loadURL('http://127.0.0.1:9080');
+    } else {
+      mainWindow.loadFile(path.join(__dirname, '../../dist/electron/index.html'));
+    }
+    mainWindow.on('closed', () => { mainWindow = null; });
+  }
+
+  app.whenReady().then(() => {
+    createWindow();
+    if (app.isPackaged) {
+      autoUpdater.checkForUpdates().catch(error => console.error('Update check failed', error));
+      setInterval(() => {
+        autoUpdater.checkForUpdates().catch(error => console.error('Update check failed', error));
+      }, 1800000);
     }
   });
 
-  mainWindow.loadURL(winURL);
-
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
   });
-}
 
-app.on("ready", () => {
-  createWindow();
-  autoUpdater.checkForUpdates();
-});
+  app.on('activate', () => {
+    if (!mainWindow) createWindow();
+  });
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
 
-app.on("activate", () => {
-  if (mainWindow === null) {
-    createWindow();
-  }
-});
+  autoUpdater.on('update-available', () => {
+    app.updateDownloading = true;
+    app.updateFailed = false;
+  });
 
-app.updateDownloaded = false;
-app.updateFailed = false;
+  autoUpdater.on('update-downloaded', () => {
+    app.updateDownloaded = true;
+    app.updateDownloading = false;
+    app.updateFailed = false;
+  });
 
-autoUpdater.on("update-available", info => {
-  app.updateDownloading = true;
-  autoUpdater.downloadUpdate();
-});
+  autoUpdater.on('update-not-available', () => {
+    app.updateDownloading = false;
+    app.updateFailed = false;
+  });
 
-autoUpdater.on("update-downloaded", info => {
-  app.updateDownloaded = true;
-
-  try {
-    autoUpdater.quitAndInstall();
-  } catch (error) {
-    console.error('Updated failed', error);
+  autoUpdater.on('error', error => {
+    console.error('Update failed', error);
+    app.updateDownloading = false;
     app.updateFailed = true;
-  }
-});
+  });
 
-app.reloadApp = () => {
-  autoUpdater.quitAndInstall();
-};
-
-// app.getPath('temp')
-
-/**
- * Auto Updater
- *
- * Uncomment the following code below and install `electron-updater` to
- * support auto updating. Code Signing with a valid certificate is required.
- * https://simulatedgreg.gitbooks.io/electron-vue/content/en/using-electron-builder.html#auto-updating
- import { autoUpdater } from 'electron-updater'
- */
-
-// autoUpdater.checkForUpdatesAndNotify();
-
-// app.on("ready", () => {
-
-//   autoUpdater.checkForUpdates();
-// });
-
-// autoUpdater.on("update-available", info => {});
-
-// autoUpdater.on("update-downloaded", info => {});
-
-// autoUpdater.on("checking-for-update", () => {
-//   dialog.showMessageBox({
-//     type: "info",
-//     title: "Checking for updates",
-//     message: `Checking for updates...\nFeed URL: ${autoUpdater.getFeedURL()}\nCurrent: ${
-//       autoUpdater.currentVersion
-//     }`
-//   });
-// });
-// autoUpdater.on("update-available", info => {
-//   dialog.showMessageBox(
-//       {
-//           type: "info",
-//           title: "Update Available",
-//           message: `New update available, would you like to update now?\n\nVersion: ${
-//               info.version
-//             }`,
-//             buttons: ["Yes", "No"]
-//           },
-//           buttonIndex => {
-//               if (buttonIndex == 0) {
-//         autoUpdater.downloadUpdate();
-//       }
-//     }
-//   );
-// });
-// autoUpdater.on("error", error => {
-//   dialog.showErrorBox(
-//     "Error: ",
-//     error == null ? "unknown" : (error.stack || error).toString()
-//   );
-// });
-
-// autoUpdater.on("update-not-available", info => {
-//   dialog.showMessageBox({
-//     title: "No Updates",
-//     message: `Current version is already up-to-date\n\nVersion: ${info.version}`
-//   });
-// });
-
-// autoUpdater.on("update-downloaded", info => {
-//   dialog.showMessageBox(
-//     {
-//       title: "Updates Downloaded",
-//       message: `Updates successfully downloaded, application will now quit...\n\nVersion: ${
-//         info.version
-//       }`
-//     },
-//     () => {
-//       setImmediate(() => autoUpdate.quitAndInstall());
-//     }
-//   );
-// });
-
-setInterval(() => {
-  // Check for updates every 30 minutes
-  // Do more with this in the events above this should only call the check for updates function.
-
-  // USE THIS FOR THE DOWNLOAD PROGRESS FOR A PROGRESS BAR (ECT)
-  // https://www.electron.build/auto-update#event-download-progress
-  autoUpdater.checkForUpdates();
-}, 1800000);
+  app.reloadApp = () => {
+    if (app.updateDownloaded) autoUpdater.quitAndInstall();
+  };
+}

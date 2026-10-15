@@ -21,6 +21,7 @@ export default {
   components: {
     FileView
   },
+
   data() {
     return {
       modalContent: "",
@@ -29,23 +30,27 @@ export default {
       data: false
     };
   },
+
   created() {
-    this.$root.$on("modal", (modalContent, data) => {
+    this.$bus.on("modal", (modalContent, data) => {
       this.data = data;
       this.open(modalContent);
     });
-    this.$root.$on("closeModal", () => {
+    this.$bus.on("closeModal", () => {
       this.close();
     });
   },
+
   methods: {
     open(modalContent) {
       this.modalContent = modalContent;
       this.show = true;
     },
+
     backdropPress() {
       this.close();
     },
+
     close() {
       this.show = false;
       document.body.classList.remove("bigEditNewPost");
@@ -56,6 +61,7 @@ export default {
       get() {
         return this.$store.state.showModel;
       },
+
       set(value) {
         this.$store.state.showModel = value;
       }

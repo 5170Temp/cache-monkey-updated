@@ -27,11 +27,9 @@
         @click.prevent="open('https://twitter.com/jamiepine')"
       >
         <h1 class="main-title logo">CacheMonkey</h1>
-        <small style="opacity: 0.2;">
-          by
-          <b>Jamie Pine</b>
-        </small>
+        <small class="creator-credit">by <b>Jamie Pine</b></small>
       </a>
+      <small class="updater-credit">updated by <b>5170</b></small>
       <br>
 
       <div class="info-bar">
@@ -49,10 +47,10 @@
         />
       </div>
       <!-- <button @click="$store.dispatch('toggleDark')">Toggle theme</button> -->
-      <button v-if="!processing" class="coolbtn margin-vertical" @click="$parent.scanAll">Scan Cache</button>
+      <button v-if="!processing" class="coolbtn margin-vertical" @click="$root.scanAll">Scan Cache</button>
       <button v-else class="coolbtn margin-vertical" @click="processing = false">Abort Tasks</button>
       <!-- <button
-        v-if="!$parent.watcherRunning"
+        v-if="!$root.watcherRunning"
         class="coolbtn margin-vertical"
         @click="initWatch "
       >Watch For Updates</button>
@@ -84,7 +82,7 @@
         v-tippy="$store.state.tooltipSidebar"
         title="This will permanently delete all files in the CacheMonkey dump directory. There is no confirm screen, this button is wild."
         class="coolbtn margin-vertical"
-        @click="$parent.purgeDump"
+        @click="$root.purgeDump"
         @mouseover="monkey = 3"
         @mouseout="monkey = 1"
       >Purge Dump</button>
@@ -92,7 +90,7 @@
         v-tippy="$store.state.tooltipSidebar"
         title="This will wipe the cache directory for every application you have added to CacheMonkey via the settings tab."
         class="coolbtn margin-vertical warning"
-        @click="$parent.purgeCache"
+        @click="$root.purgeCache"
         @mouseover="monkey = 2"
         @mouseout="monkey = 1"
       >Purge Cache</button>
@@ -102,7 +100,7 @@
         class="coolbtn margin-vertical danger"
         @mouseover="monkey = 4"
         @mouseout="monkey = 1"
-        @click="$parent.purgeBoth"
+        @click="$root.purgeBoth"
       >Purge Cache & Dump</button>
       <br>
       <div></div>
@@ -132,21 +130,17 @@
 </template>
 
 <script>
-import drivelist from "drivelist";
 import { promisify } from "util";
 const { shell } = require("electron");
-const remote = require("electron").remote;
+const remote = require("@electron/remote");
 const dialog = remote.dialog;
 const Path = require("path");
 const fs = require("fs");
-const readChunk = require("read-chunk");
-const fileType = require("file-type");
 const os = require("os");
 const readdir = promisify(fs.readdir);
 const copyFile = promisify(fs.copyFile);
 const rename = promisify(fs.rename);
 const stat = promisify(fs.stat);
-const chokidar = require("chokidar");
 
 import Input from "./Input";
 import { mapState } from "vuex";
@@ -156,54 +150,53 @@ export default {
   components: {
     Input
   },
+
   data() {
     return {
       monkey: 1,
       currentFilter: false,
+      updateReady: false,
       updateDownloading: false,
-      updateFailed: false
+      updateFailed: false,
+      updateInterval: null
     };
   },
+
   mounted() {
-    setTimeout(
-      () => (this.updateDownloading = remote.app.updateDownloading),
-      2000
-    );
-    const interval = setInterval(() => {
-      if (remote.app.updateDownloading) {
-        this.updateDownloading = remote.app.updateDownloading;
-      }
-      if (remote.app.updateDownloaded) {
-        this.updateReady = remote.app.updateDownloaded;
-        clearInterval(interval);
-      }
-      if (remote.app.updateFailed) {
-        this.updateReady = remote.app.updateFailed;
-        this.updateFailed = remote.app.updateFailed;
-        this.$root.$emit(
-          "alert",
-          "error",
-          "Unable to install update automatically, you can download it manually by clicking here",
-          "https://jamiepine.com/cachemonkey"
-        );
-
-        clearInterval(interval);
-      }
-    }, 30000);
-
-    this.$root.$on('nextItem', () => this.nextItem())
-    this.$root.$on('previousItem', () => this.previousItem())
+    this.refreshUpdateState();
+    this.updateInterval = setInterval(this.refreshUpdateState, 1000);
+    this.$bus.on('nextItem', this.nextItem);
+    this.$bus.on('previousItem', this.previousItem);
   },
+
+  beforeUnmount() {
+    clearInterval(this.updateInterval);
+    this.$bus.off('nextItem', this.nextItem);
+    this.$bus.off('previousItem', this.previousItem);
+  },
+
   methods: {
+    refreshUpdateState() {
+      this.updateReady = remote.app.updateDownloaded === true;
+      this.updateDownloading = !this.updateReady && remote.app.updateDownloading === true;
+      const failed = remote.app.updateFailed === true;
+      if (failed && !this.updateFailed) {
+        this.$bus.emit("alert", "error", "Could not check or download updates. Please try again later.");
+      }
+      this.updateFailed = failed;
+    },
+
     open(link) {
       shell.openExternal(link);
     },
+
     nextItem() {
       let newIndex = this.viewing.index + 1
       let obj = this.content[newIndex]
       obj.index = newIndex
       this.viewing = Object.assign(obj)
     },
+
     previousItem() {
       if (this.viewing.index === 0) return; // To stop throwing undefined error when on element 0
       let newIndex = this.viewing.index - 1
@@ -211,39 +204,45 @@ export default {
       obj.index = newIndex
       this.viewing = Object.assign(obj)
     },
+
     initWatch() {
-      this.$parent.watchBlocker = false;
-      this.$parent.initWatchers();
+      this.$root.watchBlocker = false;
+      this.$root.initWatchers();
     },
+
     killWatch() {
-      this.$parent.watchBlocker = true;
-      this.$parent.watcherRunning = false;
+      this.$root.watchBlocker = true;
+      this.$root.watcherRunning = false;
     },
+
     reload() {
-      this.fileIndex = {};
-      localStorage.clear();
-      remote.app.reloadApp();
+      if (this.updateReady) remote.app.reloadApp();
     },
+
     click(item, fileDir, index) {
       console.log(item, fileDir);
       let obj = item;
       item.index = index
       this.viewing = item;
-      this.$root.$emit("modal", "FileView");
+      this.$bus.emit("modal", "FileView");
     },
+
     open(link) {
       this.$electron.shell.openExternal(link);
     },
+
     bytesToSize(bytes) {
       const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
       if (bytes === 0) return "0 Byte";
       const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
       return Math.round(bytes / Math.pow(1024, i), 2) + " " + sizes[i];
     },
+
     filterItems(type) {
       if (this.currentFilter == type) return (this.currentFilter = "");
       this.currentFilter = type;
     },
+
     open(link) {
       shell.openExternal(link);
     }
@@ -266,17 +265,21 @@ export default {
       });
       return filter.reverse();
     },
+
     contentLength() {
       return Object.keys(this.fileIndex).map(item => this.fileIndex[item])
         .length;
     },
+
     autoStart() {
       return this.$store.state.autoStart;
     },
+
     viewing: {
       get() {
         return this.$store.state.viewingItem;
       },
+
       set(value) {
         this.$store.state.viewingItem = value;
       }
@@ -285,22 +288,16 @@ export default {
       get() {
         return this.$store.state.processing;
       },
+
       set(value) {
         this.$store.state.processing = value;
-      }
-    },
-    updateReady: {
-      get() {
-        return this.$store.state.updateReady;
-      },
-      set(value) {
-        this.$store.state.updateReady = value;
       }
     },
     fileIndex: {
       get() {
         return this.$store.state.fileIndex;
       },
+
       set(value) {
         this.$store.state.fileIndex = value;
       }
@@ -309,6 +306,7 @@ export default {
       get() {
         return this.$store.state.dumpDirectory;
       },
+
       set(value) {
         this.$store.state.dumpDirectory = value;
       }
@@ -317,6 +315,7 @@ export default {
       get() {
         return this.$store.state.watchDirectories;
       },
+
       set(value) {
         this.$store.state.watchDirectories = value;
       }
@@ -325,6 +324,7 @@ export default {
       get() {
         return this.$store.state.foundFiletypes;
       },
+
       set(value) {
         this.$store.state.foundFiletypes = value;
       }
@@ -333,6 +333,7 @@ export default {
       get() {
         return this.$store.state.currentTask;
       },
+
       set(value) {
         this.$store.state.currentTask = value;
       }
@@ -341,6 +342,7 @@ export default {
       get() {
         return this.$store.state.totalAnalysing;
       },
+
       set(value) {
         this.$store.state.totalAnalysing = value;
       }
@@ -349,6 +351,7 @@ export default {
       get() {
         return this.$store.state.totalAnalysed;
       },
+
       set(value) {
         this.$store.state.totalAnalysed = value;
       }
@@ -357,6 +360,7 @@ export default {
       get() {
         return this.$store.state.dumpScanComplete;
       },
+
       set(value) {
         this.$store.state.dumpScanComplete = value;
       }
@@ -365,6 +369,7 @@ export default {
       get() {
         return this.$store.state.dirScanComplete;
       },
+
       set(value) {
         this.$store.state.dirScanComplete = value;
       }
@@ -373,6 +378,7 @@ export default {
       get() {
         return this.$store.state.watchBlocker;
       },
+
       set(value) {
         this.$store.state.watchBlocker = value;
       }
@@ -444,6 +450,13 @@ body {
 .main-title {
   cursor: default;
 }
+.creator-credit,
+.updater-credit {
+  display: block;
+  text-align: center;
+  line-height: 1.4;
+  opacity: 0.2;
+}
 .flex {
   display: flex;
   width: 280px;
@@ -464,7 +477,9 @@ body {
   ); */
   height: 100vh;
   padding: 1px;
-  width: 100vw;
+  width: 100%;
+  min-width: 0;
+  flex: 1;
   display: flex;
   flex-direction: row;
 }
@@ -487,6 +502,8 @@ body {
   position: fixed;
 }
 .content {
+  min-width: 0;
+  flex: 1;
   margin-left: 360px;
   margin-top: 25px;
 }

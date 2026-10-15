@@ -43,7 +43,7 @@
 </template>
 
 <script>
-const { shell, remote } = require("electron");
+const remote = require("@electron/remote");
 const win = remote.getCurrentWindow();
 
 export default {
@@ -51,9 +51,11 @@ export default {
     close() {
       win.close();
     },
+
     minimize() {
       win.minimize();
     },
+
     maximize() {
       if (!win.isMaximized()) {
         win.maximize();

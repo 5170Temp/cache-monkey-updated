@@ -1,6 +1,6 @@
 <template>
   <div class="input-container" :class="{'error': error, 'success': success}">
-    <Heading v-if="heading" class="input-title" :text="heading"/>
+    <div v-if="heading" class="input-title">{{ heading }}</div>
     <p v-if="description" class="input-description">{{description}}</p>
     <div class="coolinput" :class="{'big': big, 'focus': focus}">
       <div class="prefix" v-if="prefix">{{prefix}}</div>
@@ -37,6 +37,7 @@ export default {
     "autofocus",
     "readonly"
   ],
+
   data() {
     return {
       focus: false

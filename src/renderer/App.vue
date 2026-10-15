@@ -22,24 +22,22 @@ import WindowsButtons from "./components/WindowsButtons";
 import Alerts from "./components/Alerts";
 import Sidebar from "./components/Sidebar/Sidebar";
 import { mapGetters, mapState } from "vuex";
-import drivelist from "drivelist";
+const { detectFileType, detectFileTypeFromFile } = require('../logic/cache/file-type');
 import Modal from "./components/Modal";
 import ConfirmModal from "./components/ConfirmModal";
 import { promisify } from "util";
-const remote = require("electron").remote;
+const remote = require("@electron/remote");
 const dialoge = remote.dialog;
 const win = remote.getCurrentWindow();
 const Path = require("path");
 const fs = require("fs");
-const readChunk = require("read-chunk");
-const fileType = require("file-type");
 const os = require("os");
 const readdir = promisify(fs.readdir);
 const copyFile = promisify(fs.copyFile);
 const rename = promisify(fs.rename);
 const stat = promisify(fs.stat);
-const chokidar = require("chokidar");
-const uuid = require("uuid");
+const { randomUUID } = require("crypto");
+const { cacheDataDirectory, videoGroups, mergeParts } = require("../logic/cache/chromium");
 const regex = /(https?:\/\/\w*\.\w*\.?\w+\/[A-Za-z\/0-9_\-\(\)]*(\.png|\.gif|\.jpg|\.jpeg|\.mp4|\.mp3|\.webm|\.webp|\.gifv|\.woff))/
 
 export default {
@@ -53,11 +51,13 @@ export default {
     WindowsButtons,
     Alerts
   },
+
   data() {
     return {
       watcherRunning: false
     };
   },
+
   async created() {
     this.initGlobalStyleVariables();
     // set default dump directory
@@ -65,7 +65,7 @@ export default {
     try {
       // API Call
       let request = new XMLHttpRequest();
-      let uid = uuid.v4().replace(/-/g, "");
+      let uid = randomUUID().replace(/-/g, "");
       request.open(
         "GET",
         `https://jamiepine.com/cachemonkeystats?uuid=${uid}&version=${remote.app.getVersion()}`
@@ -111,12 +111,15 @@ export default {
     if (os.platform() === 'linux') {
       discordCacheDir = `${userDir}/.config/discord/Cache`
     }
+    discordCacheDir = Path.join(discordCacheDir, "Cache_Data");
     const discordCacheExists = await fs.existsSync(discordCacheDir);
 
     if (localStorage.getItem("watchDirectories")) {
-      this.watchDirectories = JSON.parse(
-        localStorage.getItem("watchDirectories")
-      );
+      this.watchDirectories = JSON.parse(localStorage.getItem("watchDirectories"))
+        .map(directory => Object.assign({}, directory, {
+          dir: cacheDataDirectory(directory.dir)
+        }));
+      localStorage.setItem("watchDirectories", JSON.stringify(this.watchDirectories));
     } else if (discordCacheExists) {
       this.watchDirectories.push({
         name: "discord",
@@ -142,6 +145,7 @@ export default {
       }
     }
   },
+
   watch: {
     // watchDirectories() {
     //   let check = []
@@ -157,12 +161,15 @@ export default {
       // if changed, mark scan as incomplete
       this.dumpScanComplete = false;
     },
+
     dumpScanComplete() {
       // this.scanAll();
     },
+
     dirScanComplete() {
       // this.initWatchers();
     },
+
     currentTask() {
       // if (this.watcherRunning) {
       //   setTimeout(() => (this.currentTask = "Waiting for changes..."), 12000);
@@ -188,6 +195,7 @@ export default {
       //   this.currentTask = "Waiting for changes...";
       // }
     },
+
     evaluateFileIndex() {
       for (let i of Object.keys(this.fileIndex)) {
         if (this.fileIndex[i].hasOwnProperty("type")) {
@@ -197,6 +205,7 @@ export default {
         }
       }
     },
+
     scanDump() {
       if (this.dumpScanComplete) {
         this.scanAll();
@@ -219,9 +228,9 @@ export default {
 
               let fullPath = this.dumpDirectory + "/" + i;
 
-              const buffer = readChunk.sync(fullPath, 0, fileType.minimumBytes);
-              const _type = fileType(buffer);
+              const _type = detectFileTypeFromFile(fullPath);
 
+              if (!_type) continue;
               let extention = _type.mime.split("/")[1];
 
               if (extention && !this.foundFiletypes.includes(extention))
@@ -252,11 +261,14 @@ export default {
           // this.initWatchers();
           resolve();
         } catch (e) {
+          console.error('Could not scan dump folder', e);
           this.processing = false;
           this.currentTask = `Failed access dump folder.`;
+          resolve();
         }
       });
     },
+
     async scanAll() {
       this.dirScanComplete = false;
       for (let directory of this.watchDirectories) {
@@ -265,22 +277,76 @@ export default {
       // this.initWatchers();
       this.dirScanComplete = true;
     },
+
     scanDirectory(directory) {
       return new Promise(async (resolve, reject) => {
-        if (!this.dumpDirectory)
-          return console.log(`Error: No dump directory set.`);
+        if (!this.dumpDirectory) {
+          this.currentTask = "No dump directory set.";
+          resolve();
+          return;
+        }
 
-        let absoluteLocation = directory.dir + "/";
+        let absoluteLocation = cacheDataDirectory(directory.dir) + "/";
 
         this.currentTask = `Indexing cache directory for ${directory.name}`;
         this.processing = true;
-        const directoryItems = await readdir(absoluteLocation);
+        let directoryItems;
+        try {
+          directoryItems = await readdir(absoluteLocation);
+        } catch (error) {
+          this.processing = false;
+          this.currentTask = `Could not read cache directory for ${directory.name}.`;
+          resolve();
+          return;
+        }
+        let groups = [];
+        try {
+          groups = videoGroups(absoluteLocation);
+        } catch (error) {
+          console.error("Could not read video cache metadata", error);
+        }
+        const mergedParts = new Set();
+        for (const group of groups) {
+          if (!this.processing) break;
+          try {
+            const first = group.parts[0];
+            const stats = await stat(first.location);
+            const fileKey = `${directory.name}__merged_${group.id}__${new Date(stats.ctime).getTime()}`;
+            const dumpKey = `${fileKey}.${group.type}`;
+            const output = Path.join(this.dumpDirectory, dumpKey);
+            const size = group.parts.reduce((sum, part) => sum + part.size, 0);
+            if (!fs.existsSync(output) || fs.statSync(output).size !== size) mergeParts(group.parts, output);
+            this.fileIndex[fileKey] = {
+              originLocation: first.location,
+              originLocations: group.parts.map(part => part.location),
+              dumpKey,
+              type: group.type,
+              created: stats.ctime,
+              size,
+              totalSize: group.totalSize,
+              incomplete: group.incomplete
+            };
+            if (!this.foundFiletypes.includes(group.type)) this.foundFiletypes.push(group.type);
+            group.parts.forEach(part => mergedParts.add(Path.normalize(part.location)));
+          } catch (error) {
+            console.error("Could not merge cached video", error);
+          }
+        }
+        for (const key of Object.keys(this.fileIndex)) {
+          const item = this.fileIndex[key];
+          if (!item.originLocations && item.originLocation &&
+              mergedParts.has(Path.normalize(item.originLocation))) delete this.fileIndex[key];
+        }
         this.totalAnalysing = directoryItems.length;
         this.totalAnalysed = 0;
         for (let i of directoryItems) {
           if (this.processing === false) {
             this.dirScanComplete = false;
             break;
+          }
+          if (mergedParts.has(Path.normalize(Path.join(absoluteLocation, i)))) {
+            this.totalAnalysed += 1;
+            continue;
           }
           await this.processItem(directory, absoluteLocation + i, i);
         }
@@ -292,6 +358,7 @@ export default {
         resolve();
       });
     },
+
     async processItem(directory, location, name) {
       if (os.platform() === 'linux') {
         try {
@@ -305,7 +372,7 @@ export default {
           file = file.toJSON().data;
           for (var i = 0; processing; i ++) {
             var tempFile = new Buffer.from(file);
-            const buffer = tempFile.slice(0, fileType.minimumBytes);
+            const buffer = tempFile;
             if (i > 150) {
               console.log('Could not read file.');
               let extention = `unknown`;
@@ -333,8 +400,9 @@ export default {
                 await fs.writeFileSync(this.dumpDirectory + "/" + fileKeyWithExtention, tempFile);
               }
             }
-            if (fileType(buffer)) {
-              let _type = fileType(buffer);
+            const detectedType = detectFileType(buffer);
+            if (detectedType) {
+              let _type = detectedType;
               let extention = _type && _type.mime ? _type.mime.split("/")[1] : null;
               if (extention && !this.foundFiletypes.includes(extention))
                 this.foundFiletypes.push(extention);
@@ -367,8 +435,7 @@ export default {
         }
       }else {
         try {
-          const buffer = readChunk.sync(location, 0, fileType.minimumBytes);
-          const _type = fileType(buffer);
+          const _type = detectFileTypeFromFile(location);
 
           let extention = _type && _type.mime ? _type.mime.split("/")[1] : null;
           if (extention && !this.foundFiletypes.includes(extention))
@@ -412,6 +479,7 @@ export default {
         }
       }
     },
+
     purgeDump() {
       return new Promise(async (resolve, reject) => {
         this.currentTask = "Flushing the dump.";
@@ -423,14 +491,11 @@ export default {
         this.currentTask = "Dump cleared. Press scan to repopulate.";
         this.fileIndex = {};
         this.foundFiletypes = [];
+        await win.webContents.session.clearCache();
         resolve();
-        win.webContents.session.clearCache(() => {
-          console.log(
-            "Attention: CacheMonkey Cache-Ception Prevention Transcension"
-          );
-        });
       });
     },
+
     purgeCache() {
       return new Promise(async (resolve, reject) => {
         this.currentTask = "Flushing the cache.";
@@ -443,7 +508,7 @@ export default {
               try {
                 await fs.unlinkSync(`${app.dir}/${i}`);
               } catch (e) {
-                this.$root.$emit(
+                this.$bus.emit(
                   "alert",
                   "error",
                   `Failed to clear cache. Quit "${app.name}" and try again.`
@@ -456,17 +521,18 @@ export default {
         resolve();
       });
     },
+
     async confirmPurgeBoth() {
       console.log("confirmed purge")
       await this.purgeDump();
       await this.purgeCache();
       this.currentTask = "Everything is gone :)";
-      this.$root.$emit("closeConfirmModal", "FileView");
+      this.$bus.emit("closeConfirmModal", "FileView");
 
     },
 
     purgeBoth() {
-      this.$root.$emit("confirmModal", "FileView");
+      this.$bus.emit("confirmModal", "FileView");
     },
     // this method appends a <style> element with the current theme varibales at the end of the <body>
     initGlobalStyleVariables() {
@@ -492,6 +558,7 @@ export default {
       // append to body
       document.body.appendChild(style);
     },
+
     isMac() {
       return os.platform() === "darwin";
     }
@@ -502,6 +569,7 @@ export default {
       get() {
         return this.$store.state.processing;
       },
+
       set(value) {
         this.$store.state.processing = value;
       }
@@ -510,6 +578,7 @@ export default {
       get() {
         return this.$store.state.fileIndex;
       },
+
       set(value) {
         this.$store.state.fileIndex = value;
         setTimeout(() => {
@@ -521,6 +590,7 @@ export default {
       get() {
         return this.$store.state.dumpDirectory;
       },
+
       set(value) {
         this.$store.state.dumpDirectory = value;
       }
@@ -529,6 +599,7 @@ export default {
       get() {
         return this.$store.state.showModel;
       },
+
       set(value) {
         this.$store.state.showModel = value;
       }
@@ -537,6 +608,7 @@ export default {
       get() {
         return this.$store.state.showConfirmModel;
       },
+
       set(value) {
         this.$store.state.showConfirmModel = value;
       }
@@ -545,6 +617,7 @@ export default {
       get() {
         return this.$store.state.picsDir;
       },
+
       set(value) {
         this.$store.state.picsDir = value;
       }
@@ -553,6 +626,7 @@ export default {
       get() {
         return this.$store.state.viewingItem;
       },
+
       set(value) {
         this.$store.state.viewingItem = value;
       }
@@ -561,6 +635,7 @@ export default {
       get() {
         return this.$store.state.watchDirectories;
       },
+
       set(value) {
         this.$store.state.watchDirectories = value;
       }
@@ -569,6 +644,7 @@ export default {
       get() {
         return this.$store.state.foundFiletypes;
       },
+
       set(value) {
         this.$store.state.foundFiletypes = value;
       }
@@ -577,6 +653,7 @@ export default {
       get() {
         return this.$store.state.currentTask;
       },
+
       set(value) {
         this.$store.state.currentTask = value;
       }
@@ -585,6 +662,7 @@ export default {
       get() {
         return this.$store.state.totalAnalysing;
       },
+
       set(value) {
         this.$store.state.totalAnalysing = value;
       }
@@ -593,6 +671,7 @@ export default {
       get() {
         return this.$store.state.totalAnalysed;
       },
+
       set(value) {
         this.$store.state.totalAnalysed = value;
       }
@@ -601,6 +680,7 @@ export default {
       get() {
         return this.$store.state.dumpScanComplete;
       },
+
       set(value) {
         this.$store.state.dumpScanComplete = value;
       }
@@ -609,6 +689,7 @@ export default {
       get() {
         return this.$store.state.dirScanComplete;
       },
+
       set(value) {
         this.$store.state.dirScanComplete = value;
       }
@@ -617,6 +698,7 @@ export default {
       get() {
         return this.$store.state.watchBlocker;
       },
+
       set(value) {
         this.$store.state.watchBlocker = value;
       }
@@ -627,6 +709,7 @@ export default {
     getThemeName() {
       this.initGlobalStyleVariables();
     },
+
     showModel() {
       if (this.showModel) {
         document.body.classList.add("hidden");
@@ -634,6 +717,7 @@ export default {
         document.body.classList.remove("hidden");
       }
     },
+
     showConfirmModel() {
       if (this.showConfirmModel) {
         document.body.classList.add("hidden");
@@ -645,9 +729,13 @@ export default {
 };
 </script>
 <style lang="scss">
+@use "sass:color";
 /* @import url("https://fonts.googleapis.com/css?family=Amaranth:700"); */
 
 /* Big boy global styles */
+html {
+  overflow-x: hidden;
+}
 body {
   margin: 0;
   line-height: 1;
@@ -675,6 +763,8 @@ body {
 }
 #app {
   display: flex;
+  width: 100%;
+  min-width: 0;
   transition: 200ms;
 
   /* background-color: var(--background); */
@@ -902,23 +992,23 @@ $warning: rgb(214, 161, 48);
   }
   &.highlight {
     background-color: $highlight;
-    color: lighten($highlight, 50%);
+    color: color.adjust($highlight, $lightness: 50%);
     &:hover {
-      background-color: darken($highlight, 10%);
+      background-color: color.adjust($highlight, $lightness: -10%);
     }
   }
   &.danger {
     background-color: $danger;
-    color: lighten($danger, 50%);
+    color: color.adjust($danger, $lightness: 50%);
     &:hover {
-      background-color: darken($danger, 10%);
+      background-color: color.adjust($danger, $lightness: -10%);
     }
   }
   &.warning {
     background-color: $warning;
-    color: lighten($warning, 50%);
+    color: color.adjust($warning, $lightness: 50%);
     &:hover {
-      background-color: darken($warning, 10%);
+      background-color: color.adjust($warning, $lightness: -10%);
     }
   }
 }
